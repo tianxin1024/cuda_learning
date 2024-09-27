@@ -81,3 +81,6 @@ if __name__ == "__main__":
     y_f16 = y.half().contiguous()
     run_benchmark(lib.relu_f16, x_f16, "f16", y_f16)
     run_benchmark(lib.relu_f16x2, x_f16, "f16x2", y_f16)
+    run_benchmark(lib.relu_f16x8, x_f16, "f16x8", y_f16)
+    run_benchmark(lib.relu_f16x8_pack, x_f16, "f16x8pack", y_f16)
+    run_benchmark(torch.relu, x_f16, "f16_th")
