@@ -11,3 +11,6 @@ cuda learning
     │       └── reduction.pdf
     └── doc
        └── cuda-doc.md
+
+## 参考资料
+    https://github.com/DefTruth/CUDA-Learn-Notes/tree/main
