@@ -6,23 +6,32 @@ from typing import Optional
 torch.set_grad_enabled(False)
 
 # Load the CUDA kernel as a python module
-lib = load(name="relu_lib", 
-           sources=['relu.cu'],
-           extra_cuda_cflags=[
-               "-O3",
-               "-U__CUDA_NO_HALF_OPERATORS__",
-               "-U__CUDA_NO_HALF_CONVERSIONS__",
-               "-U__CUDA_NO_HALF2_OPERATORS__",
-               "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
-               "--expt-relaxed-constexpr",
-               "--expt-extended-lambda",
-               "--use_fast_math",
-            ],
-           extra_cflags=['-std=c++17'])
+lib = load(
+    name="relu_lib",
+    sources=["relu.cu"],
+    extra_cuda_cflags=[
+        "-O3",
+        "-U__CUDA_NO_HALF_OPERATORS__",
+        "-U__CUDA_NO_HALF_CONVERSIONS__",
+        "-U__CUDA_NO_HALF2_OPERATORS__",
+        "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
+        "--expt-relaxed-constexpr",
+        "--expt-extended-lambda",
+        "--use_fast_math",
+    ],
+    extra_cflags=["-std=c++17"],
+)
 
-def run_benchmark(perf_func: callable, x: torch.Tensor, tag: str,
-                  out: Optional[torch.Tensor] = None, warmup: int = 10,
-                  iters: int = 1000, show_all: bool = False):
+
+def run_benchmark(
+    perf_func: callable,
+    x: torch.Tensor,
+    tag: str,
+    out: Optional[torch.Tensor] = None,
+    warmup: int = 10,
+    iters: int = 1000,
+    show_all: bool = False,
+):
     if out is not None:
         out.fill_(0)
 
@@ -47,7 +56,7 @@ def run_benchmark(perf_func: callable, x: torch.Tensor, tag: str,
 
     torch.cuda.synchronize()
     end = time.time()
-    total_time = (end - start) * 1000 # ms
+    total_time = (end - start) * 1000  # ms
     mean_time = total_time / iters
     out_info = f"out_{tag}"
     out_val = out.flatten().detach().cpu().numpy().tolist()[:2]
@@ -64,3 +73,11 @@ if __name__ == "__main__":
     x = torch.randn((S, K)).cuda().float().contiguous()
     y = torch.zeros_like(x).cuda().float().contiguous()
     run_benchmark(lib.relu_f32, x, "f32", y)
+    run_benchmark(lib.relu_f32x4, x, "f32x4", y)
+    run_benchmark(torch.relu, x, "f32_th")
+
+    print("-" * 80)
+    x_f16 = x.half().contiguous()
+    y_f16 = y.half().contiguous()
+    run_benchmark(lib.relu_f16, x_f16, "f16", y_f16)
+    run_benchmark(lib.relu_f16x2, x_f16, "f16x2", y_f16)

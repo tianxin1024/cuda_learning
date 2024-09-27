@@ -1,24 +1,33 @@
+#pragma once
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <float.h>
+#include <cuda_fp16.h>
 #include <torch/types.h>
 #include <torch/extension.h>
 
-// -------------------------------------- FP32 -------------------------------------- 
-// Relu x: N, y: N y=max(0, x)
-// grid(N/256), block(K=256)
-__global__ void relu_f32_kernel(float* x, float* y, int N) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < N) {
-        y[idx] = fmaxf(0.0f, x[idx]);
-    }
-}
+#define WARP_SIZE 32
+#define INT4(value) (reinterpret_cast<int4*>(&(value))[0])
+#define FLOAT4(value) (reinterpret_cast<float4*>(&(value))[0])
+#define HALF2(value) (reinterpret_cast<half2*>(&(value))[0])
+
+__global__ void relu_f32_kernel(float *x, float *y, int N);
+__global__ void relu_f32x4_kernel(float* x, float* y, int N);
+__global__ void relu_f16_kernel(half* x, half* y, int N);
+__global__ void relu_f16x2_kernel(half* x, half* y, int N);
 
 
 // --------------------- PyTorch bindings for custom kernel -----------------------
 #define STRINGFY(str) #str
 #define TORCH_BINDING_COMMON_EXTENSION(func)  \
     m.def(STRINGFY(func), &func, STRINGFY(func));
+
+#define CHECK_TORCH_TENSOR_DTYPE(T, th_type)                         \
+if (((T).options().dtype() != (th_type))) {                          \
+    std::cout << "Tensor Info:" << (T).options() << std::endl;       \
+    throw std::runtime_error("values must be "#th_type);             \
+}
 
 
 #define TORCH_BINDING_RELU(packed_type, th_type, element_type, n_elements)      \
@@ -43,7 +52,7 @@ void relu_##packed_type(torch::Tensor x, torch::Tensor y) {                     
         if ((K / (n_elements)) <= 1024) {                                       \
             dim3 block(K / (n_elements));                                       \
             dim3 grid(S);                                                       \
-            relu_##packed_type##_kernel<<grid, block>>>(                        \
+            relu_##packed_type##_kernel<<<grid, block>>>(                        \
                 reinterpret_cast<element_type*>(x.data_ptr()),                  \
                 reinterpret_cast<element_type*>(y.data_ptr()), N);              \
         } else {                                                                \
@@ -60,8 +69,14 @@ void relu_##packed_type(torch::Tensor x, torch::Tensor y) {                     
     }                                                                           \
 }
 
-TORCH_BINDING_RELU(f32, torch::kFloat32, float, 1)
+TORCH_BINDING_RELU(f32,   torch::kFloat32, float, 1)
+TORCH_BINDING_RELU(f32x4, torch::kFloat32, float, 4)
+TORCH_BINDING_RELU(f16,   torch::kHalf, half, 1)
+TORCH_BINDING_RELU(f16x2, torch::kHalf, half, 2)
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     TORCH_BINDING_COMMON_EXTENSION(relu_f32)
+    TORCH_BINDING_COMMON_EXTENSION(relu_f32x4)
+    TORCH_BINDING_COMMON_EXTENSION(relu_f16)
+    TORCH_BINDING_COMMON_EXTENSION(relu_f16x2)
 }
