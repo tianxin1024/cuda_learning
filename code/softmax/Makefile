@@ -12,6 +12,9 @@ run2 :
 run3 :
 	@./softmax 3
 
+run4 :
+	@./softmax 4
+
 clean :
 	@rm softmax
 
