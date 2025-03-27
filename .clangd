@@ -1,0 +1,4 @@
+CompileFlags:
+  Add:
+    - --cuda-gpu-arch=sm_86
+    - --cuda-path=/usr/local/cuda
