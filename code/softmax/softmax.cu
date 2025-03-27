@@ -2,6 +2,8 @@
     run: nvcc -o softmax softmax.cu
 */
 #include "utils.h"
+#include <cooperative_groups.h>
+#include <cooperative_groups/reduce.h>
 
 // CPU code reference
 void softmax_cpu(float* out, const float* inp, int N, int C) {
@@ -277,6 +279,86 @@ __global__ void softmax_forward_kernel4(float* out, const float* inp, int N, int
     }
 }
 
+// gridDim (N, 1, 1)   blockDim (block_size, 1, 1)
+__global__ void softmax_forward_kernel5(float* out, const float* inp, int N, int C) {
+    // inp is (N, C)
+    // out is (N, C), each row of inp will get softmaxed
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < N) {
+        const float* inp_row = inp + i * C;
+        float* out_row = out + i * C;
+
+        float maxval = -INFINITY;
+        double sum = 0.0f;
+        for (int j = 0; j < C; j++) {
+            float maxval_prev = maxval;
+            if (inp_row[j] > maxval) {
+                maxval = inp_row[j];
+                sum = sum * expf(maxval_prev - maxval) + expf(inp_row[j] - maxval);
+            } else {
+                sum += expf(inp_row[j] - maxval);
+            }
+        }
+
+        for (int j = 0; j < C; j++) {
+            out_row[j] = expf(inp_row[j] - maxval) / sum;
+        }
+    }
+}
+
+// struct for the reduction operation, guarantees 8-byte alignment
+struct __align__(8) SumMax {
+    float maxval;
+    float sum;
+};
+
+// forceinline helps avoid function call overhead
+__device__ __forceinline__ SumMax reduce_sum_max_op(SumMax a, SumMax b) {
+    bool a_bigger = (a.maxval > b.maxval);
+    SumMax bigger_m = a_bigger ? a : b;
+    SumMax smaller_m = a_bigger ? b : a;
+    SumMax res;
+    res.maxval = bigger_m.maxval;
+    res.sum = bigger_m.sum + smaller_m.sum * expf(smaller_m.maxval - bigger_m.maxval);
+    return res;
+}
+
+// gridDim (N * 32, 1, 1)   blockDim (block_size, 1, 1)
+__global__ void softmax_forward_kernel6(float* out, const float* inp, int N, int C) {
+    namespace cg = cooperative_groups;
+    cg::thread_block block = cg::this_thread_block();
+    cg::thread_block_tile<32> warp = cg::tiled_partition<32>(block);
+    int idx = blockIdx.x * warp.meta_group_size() + warp.meta_group_rank();
+
+    if (idx >= N) {
+        return ;
+    }
+
+    // one row of inp, i.e. inp[idx, :] of shape (C,)
+    const float* x = inp + idx * C;
+
+    // base case for the reduction
+    SumMax sm_partial;
+    sm_partial.maxval = -INFINITY;
+    sm_partial.sum = 0.0f;
+
+    // first, thread coarsening by directly accessing global memory in series
+    for (int i = warp.thread_rank(); i < C; i += warp.size()) {
+        sm_partial = reduce_sum_max_op(sm_partial, { x[i], 1.0f });
+    }
+
+    // second, the reduction
+    SumMax sm_total = cg::reduce(warp, sm_partial, reduce_sum_max_op);
+
+    // divide the whole row by the sum
+    for (int i = warp.thread_rank(); i < C; i += warp.size()) {
+        // the below is equivalent to
+        // out[idx * C + i] = expf(x[i] - sm_total.maxval) / sm_total.sum;
+        // but uses special instruction that bypasses the cache
+        __stcs(out + idx * C + i, expf(x[i] - sm_total.maxval) / sm_total.sum);
+    }
+}
+
 // kernel launcher
 void softmax_forward_v1(float* out, const float* inp, int N, int C, const int block_size) {
     const int grid_size = ceil_div(N, block_size);
@@ -306,6 +388,20 @@ void softmax_forward_v4(float* out, const float* inp, int N, int C, int block_si
     cudaCheck(cudaGetLastError());
 }
 
+// online softmax v1
+void softmax_forward_v5(float* out, const float* inp, int N, int C, int block_size) {
+    const int grid_size = ceil_div(N, block_size);
+    softmax_forward_kernel5<<<grid_size, block_size>>>(out, inp, N, C);
+    cudaCheck(cudaGetLastError());
+}
+
+// online softmax v2
+void softmax_forward_v6(float* out, const float* inp, int N, int C, int block_size) {
+    const int grid_size = ceil_div(N * 32, block_size);
+    softmax_forward_kernel6<<<grid_size, block_size>>>(out, inp, N, C);
+    cudaCheck(cudaGetLastError());
+}
+ 
 // kernel version dispatch
 void softmax_gpu(int kernel_num, float* out, const float* inp, int N, int C, const int block_size) {
     switch (kernel_num) {
@@ -320,6 +416,12 @@ void softmax_gpu(int kernel_num, float* out, const float* inp, int N, int C, con
             break;
         case 4:
             softmax_forward_v4(out, inp, N, C, block_size);
+            break;
+        case 5:
+            softmax_forward_v5(out, inp, N, C, block_size);
+            break;
+        case 6:
+            softmax_forward_v6(out, inp, N, C, block_size);
             break;
         default:
             printf("Invalid kernel number\n");
