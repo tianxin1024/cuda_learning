@@ -6,7 +6,7 @@
 #include <cooperative_groups/reduce.h>
 
 // CPU code reference
-void softmax_cpu(float* out, const float* inp, int N, int C) {
+void softmax_cpu(float *out, const float *inp, int N, int C) {
     // inp is (N, C)
     // out is (N, C), each row of inp will get softmaxed
     for (int i = 0; i < N; i++) {
@@ -33,12 +33,12 @@ void softmax_cpu(float* out, const float* inp, int N, int C) {
     }
 }
 
-void softmax_online_cpu(float* out, const float* inp, int N, int C) {
+void softmax_online_cpu(float *out, const float *inp, int N, int C) {
     // inp is (N, C)
     // out is (N, C), each row of inp will get softmaxed
     for (int i = 0; i < N; i++) {
-        const float* inp_row = inp + i * C;
-        float* out_row = out + i * C;
+        const float *inp_row = inp + i * C;
+        float *out_row = out + i * C;
 
         float maxval = -INFINITY;
         float sum = 0.0f;
@@ -60,17 +60,18 @@ void softmax_online_cpu(float* out, const float* inp, int N, int C) {
 
 // ----------------------------------------------------------------------------
 // GPU kernels
-__global__ void softmax_forward_kernel1(float* out, const float* inp, int N, int C) {
+// gridDim (N / block_size, 1, 1)  blockDim (block_size, 1, 1)
+__global__ void softmax_forward_kernel1(float *out, const float *inp, int N, int C) {
     // inp is (N, C)
     // out is (N, C), each row of inp will get softmaxed
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < N) {
-        const float* inp_row = inp + i * C;
-        float* out_row = out + i * C;
+        const float *inp_row = inp + i * C;
+        float *out_row = out + i * C;
 
         float maxval = -INFINITY;
         for (int j = 0; j < C; j++) {
-            if (inp_row[j] > maxval){
+            if (inp_row[j] > maxval) {
                 maxval = inp_row[j];
             }
         }
@@ -88,14 +89,14 @@ __global__ void softmax_forward_kernel1(float* out, const float* inp, int N, int
 }
 
 // gridDim (N, 1, 1),   blockDim (block_size, 1, 1)
-__global__ void softmax_forward_kernel2(float* out, const float* inp, int N, int C) {
+__global__ void softmax_forward_kernel2(float *out, const float *inp, int N, int C) {
     // inp is (N, C)
     // in each row of C elements, first calculates maxval, then returns expf(val - maxval)
     extern __shared__ float shared[];
     int idx = blockIdx.x;  // ranges [0, N)
     int tid = threadIdx.x; // ranges [0, block_size)
     int block_size = blockDim.x;
-    const float* x = inp + idx * C; // idx-th row of inp
+    const float *x = inp + idx * C; // idx-th row of inp
     // thread coarsening
     float maxval = -INFINITY;
     for (int i = tid; i < C; i += block_size) {
@@ -119,7 +120,7 @@ __global__ void softmax_forward_kernel2(float* out, const float* inp, int N, int
     }
     __syncthreads();
     // thread coarsening again, for the sum
-    x = out + idx * C;  // idx-th row of out
+    x = out + idx * C; // idx-th row of out
     float sumval = 0.0f;
     for (int i = tid; i < C; i += block_size) {
         sumval += x[i];
@@ -159,13 +160,13 @@ __device__ float warpReduceSum(float val) {
 }
 
 // gridDim (N, 1, 1) blockDim (32, 1, 1)
-__global__ void softmax_forward_kernel3(float* out, const float* inp, int N, int C) {
+__global__ void softmax_forward_kernel3(float *out, const float *inp, int N, int C) {
     // kernel must use block size of 32
     extern __shared__ float shared[];
 
     int idx = blockIdx.x;
     int tid = threadIdx.x;
-    const float* x = inp + idx * C;
+    const float *x = inp + idx * C;
 
     // Thread coarsening and within-warp reduction for maxval
     float maxval = -INFINITY;
@@ -200,7 +201,7 @@ __global__ void softmax_forward_kernel3(float* out, const float* inp, int N, int
 }
 
 // gridDim (N, 1, 1), blockDim (block_size, 1, 1)
-__global__ void softmax_forward_kernel4(float* out, const float* inp, int N, int C) {
+__global__ void softmax_forward_kernel4(float *out, const float *inp, int N, int C) {
     // inp is (N, C)
     // out is (N, C) just like inp. Each row of inp will get softmaxed.
     // same as kernel3, but can handle any block size (multiple of 32)
@@ -210,19 +211,19 @@ __global__ void softmax_forward_kernel4(float* out, const float* inp, int N, int
     extern __shared__ float shared[];
     int idx = blockIdx.x;
     int tid = threadIdx.x;
-    int warpId = threadIdx.x / 32;  // warp index within a block
-    int laneId = threadIdx.x % 32;  // thread index within a warp
+    int warpId = threadIdx.x / 32; // warp index within a block
+    int laneId = threadIdx.x % 32; // thread index within a warp
 
     // the number of warps per block. recall that blockDim.x is block_size
     int warpsPerBlock = blockDim.x / 32;
 
     // shared[] must be allocated to have 2 * warpsPerBlock elements
     // first half for max values, the second half for sum values
-    float* maxvals = shared;
-    float* sumvals = &shared[warpsPerBlock];
+    float *maxvals = shared;
+    float *sumvals = &shared[warpsPerBlock];
 
     // one row of inp, i.e. inp[idx, :] of shape (C,)
-    const float* x = inp + idx * C;
+    const float *x = inp + idx * C;
 
     // first, thread coarsening by directly accessing global memory in series
     float maxval = -INFINITY;
@@ -274,19 +275,19 @@ __global__ void softmax_forward_kernel4(float* out, const float* inp, int N, int
     // broadcast the sum to all threads
     float sum = sumvals[0];
 
-    for (int i = tid; i < C; i +=  blockDim.x) {
+    for (int i = tid; i < C; i += blockDim.x) {
         out[idx * C + i] = x[i] / sum;
     }
 }
 
-// gridDim (N, 1, 1)   blockDim (block_size, 1, 1)
-__global__ void softmax_forward_kernel5(float* out, const float* inp, int N, int C) {
+// gridDim (N / block_size, 1, 1)   blockDim (block_size, 1, 1)
+__global__ void softmax_forward_kernel5(float *out, const float *inp, int N, int C) {
     // inp is (N, C)
     // out is (N, C), each row of inp will get softmaxed
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < N) {
-        const float* inp_row = inp + i * C;
-        float* out_row = out + i * C;
+        const float *inp_row = inp + i * C;
+        float *out_row = out + i * C;
 
         float maxval = -INFINITY;
         double sum = 0.0f;
@@ -323,19 +324,19 @@ __device__ __forceinline__ SumMax reduce_sum_max_op(SumMax a, SumMax b) {
     return res;
 }
 
-// gridDim (N * 32, 1, 1)   blockDim (block_size, 1, 1)
-__global__ void softmax_forward_kernel6(float* out, const float* inp, int N, int C) {
+// gridDim (N * 32 / block_size, 1, 1)   blockDim (block_size, 1, 1)
+__global__ void softmax_forward_kernel6(float *out, const float *inp, int N, int C) {
     namespace cg = cooperative_groups;
     cg::thread_block block = cg::this_thread_block();
     cg::thread_block_tile<32> warp = cg::tiled_partition<32>(block);
     int idx = blockIdx.x * warp.meta_group_size() + warp.meta_group_rank();
 
     if (idx >= N) {
-        return ;
+        return;
     }
 
     // one row of inp, i.e. inp[idx, :] of shape (C,)
-    const float* x = inp + idx * C;
+    const float *x = inp + idx * C;
 
     // base case for the reduction
     SumMax sm_partial;
@@ -344,7 +345,7 @@ __global__ void softmax_forward_kernel6(float* out, const float* inp, int N, int
 
     // first, thread coarsening by directly accessing global memory in series
     for (int i = warp.thread_rank(); i < C; i += warp.size()) {
-        sm_partial = reduce_sum_max_op(sm_partial, { x[i], 1.0f });
+        sm_partial = reduce_sum_max_op(sm_partial, {x[i], 1.0f});
     }
 
     // second, the reduction
@@ -360,20 +361,20 @@ __global__ void softmax_forward_kernel6(float* out, const float* inp, int N, int
 }
 
 // kernel launcher
-void softmax_forward_v1(float* out, const float* inp, int N, int C, const int block_size) {
+void softmax_forward_v1(float *out, const float *inp, int N, int C, const int block_size) {
     const int grid_size = ceil_div(N, block_size);
     softmax_forward_kernel1<<<grid_size, block_size>>>(out, inp, N, C);
     cudaCheck(cudaGetLastError());
 }
 
-void softmax_forward_v2(float* out, const float* inp, int N, int C, const int block_size) {
+void softmax_forward_v2(float *out, const float *inp, int N, int C, const int block_size) {
     int grid_size = N;
     size_t shared_mem_size = block_size * sizeof(float);
     softmax_forward_kernel2<<<grid_size, block_size, shared_mem_size>>>(out, inp, N, C);
     cudaCheck(cudaGetLastError());
 }
 
-void softmax_forward_v3(float* out, const float* inp, int N, int C, int block_size) {
+void softmax_forward_v3(float *out, const float *inp, int N, int C, int block_size) {
     block_size = 32;
     int grid_size = N;
     size_t shared_mem_size = block_size * sizeof(float);
@@ -381,7 +382,7 @@ void softmax_forward_v3(float* out, const float* inp, int N, int C, int block_si
     cudaCheck(cudaGetLastError());
 }
 
-void softmax_forward_v4(float* out, const float* inp, int N, int C, int block_size) {
+void softmax_forward_v4(float *out, const float *inp, int N, int C, int block_size) {
     int grid_size = N;
     size_t shared_mem_size = 2 * block_size / 32 * sizeof(float);
     softmax_forward_kernel4<<<grid_size, block_size, shared_mem_size>>>(out, inp, N, C);
@@ -389,49 +390,47 @@ void softmax_forward_v4(float* out, const float* inp, int N, int C, int block_si
 }
 
 // online softmax v1
-void softmax_forward_v5(float* out, const float* inp, int N, int C, int block_size) {
+void softmax_forward_v5(float *out, const float *inp, int N, int C, int block_size) {
     const int grid_size = ceil_div(N, block_size);
     softmax_forward_kernel5<<<grid_size, block_size>>>(out, inp, N, C);
     cudaCheck(cudaGetLastError());
 }
 
 // online softmax v2
-void softmax_forward_v6(float* out, const float* inp, int N, int C, int block_size) {
+void softmax_forward_v6(float *out, const float *inp, int N, int C, int block_size) {
     const int grid_size = ceil_div(N * 32, block_size);
     softmax_forward_kernel6<<<grid_size, block_size>>>(out, inp, N, C);
     cudaCheck(cudaGetLastError());
 }
- 
-// kernel version dispatch
-void softmax_gpu(int kernel_num, float* out, const float* inp, int N, int C, const int block_size) {
-    switch (kernel_num) {
-        case 1:
-            softmax_forward_v1(out, inp, N, C, block_size);
-            break;
-        case 2:
-            softmax_forward_v2(out, inp, N, C, block_size);
-            break;
-        case 3:
-            softmax_forward_v3(out, inp, N, C, block_size);
-            break;
-        case 4:
-            softmax_forward_v4(out, inp, N, C, block_size);
-            break;
-        case 5:
-            softmax_forward_v5(out, inp, N, C, block_size);
-            break;
-        case 6:
-            softmax_forward_v6(out, inp, N, C, block_size);
-            break;
-        default:
-            printf("Invalid kernel number\n");
-            exit(1);
-    }
 
+// kernel version dispatch
+void softmax_gpu(int kernel_num, float *out, const float *inp, int N, int C, const int block_size) {
+    switch (kernel_num) {
+    case 1:
+        softmax_forward_v1(out, inp, N, C, block_size);
+        break;
+    case 2:
+        softmax_forward_v2(out, inp, N, C, block_size);
+        break;
+    case 3:
+        softmax_forward_v3(out, inp, N, C, block_size);
+        break;
+    case 4:
+        softmax_forward_v4(out, inp, N, C, block_size);
+        break;
+    case 5:
+        softmax_forward_v5(out, inp, N, C, block_size);
+        break;
+    case 6:
+        softmax_forward_v6(out, inp, N, C, block_size);
+        break;
+    default:
+        printf("Invalid kernel number\n");
+        exit(1);
+    }
 }
 
 int main(int argc, char **argv) {
-
     srand(0);
     int B = 8;
     int T = 1024;
@@ -441,12 +440,12 @@ int main(int argc, char **argv) {
     cudaCheck(cudaSetDevice(deviceIdx));
 
     // create host memory of random numbers
-    float *out = (float*)malloc(B * T * V * sizeof(float));
-    float* inp = make_random_float(B * T * V);
+    float *out = (float *)malloc(B * T * V * sizeof(float));
+    float *inp = make_random_float(B * T * V);
 
     // move to GPU
-    float* d_out;
-    float* d_inp;
+    float *d_out;
+    float *d_inp;
     cudaCheck(cudaMalloc(&d_out, B * T * V * sizeof(float)));
     cudaCheck(cudaMalloc(&d_inp, B * T * V * sizeof(float)));
     cudaCheck(cudaMemcpy(d_inp, inp, B * T * V * sizeof(float), cudaMemcpyHostToDevice));
