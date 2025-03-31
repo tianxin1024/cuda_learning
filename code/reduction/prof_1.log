@@ -1,0 +1,162 @@
+==PROF== Connected to process 331499 (/home/tianxin/mygit/cuda_learning/code/reduction/test)
+==PROF== Profiling "atomic_red" - 0: 0%....50%....100% - 34 passes
+==PROF== Disconnected from process 331499
+[331499] test@127.0.0.1
+  atomic_red(const float *, float *) (33792, 1, 1)x(1024, 1, 1), Context 1, Stream 7, Device 0, CC 8.6
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ------------- --------------
+    Metric Name               Metric Unit   Metric Value
+    ----------------------- ------------- --------------
+    DRAM Frequency          cycle/nsecond           6.99
+    SM Frequency            cycle/usecond         915.00
+    Elapsed Cycles                  cycle    111,096,578
+    Memory Throughput                   %           2.09
+    DRAM Throughput                     %           0.49
+    Duration                      msecond         121.42
+    L1/TEX Cache Throughput             %           1.38
+    L2 Cache Throughput                 %           2.09
+    SM Active Cycles                cycle 110,989,856.96
+    Compute (SM) Throughput             %           0.68
+    ----------------------- ------------- --------------
+
+    WRN   This kernel exhibits low compute throughput and memory bandwidth utilization relative to the peak performance 
+          of this device. Achieved compute throughput and/or memory bandwidth below 60.0% of peak typically indicate    
+          latency issues. Look at Scheduler Statistics and Warp State Statistics for potential reasons.                 
+
+    Section: GPU Speed Of Light Roofline Chart
+    INF   The ratio of peak float (fp32) to double (fp64) performance on this device is 64:1. The kernel achieved 0% of 
+          this device's fp32 peak performance and 0% of its fp64 peak performance. See the Kernel Profiling Guide       
+          (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#roofline) for more details on roofline      
+          analysis.                                                                                                     
+
+    Section: Compute Workload Analysis
+    -------------------- ----------- ------------
+    Metric Name          Metric Unit Metric Value
+    -------------------- ----------- ------------
+    Executed Ipc Active   inst/cycle         0.00
+    Executed Ipc Elapsed  inst/cycle         0.00
+    Issue Slots Busy               %         0.07
+    Issued Ipc Active     inst/cycle         0.00
+    SM Busy                        %         0.07
+    -------------------- ----------- ------------
+
+    WRN   All compute pipelines are under-utilized. Either this kernel is very small or it doesn't issue enough warps   
+          per scheduler. Check the Launch Statistics and Scheduler Statistics sections for further details.             
+
+    Section: Memory Workload Analysis
+    --------------------------- ------------ ------------
+    Metric Name                  Metric Unit Metric Value
+    --------------------------- ------------ ------------
+    Memory Throughput           Gbyte/second         2.13
+    Mem Busy                               %         2.09
+    Max Bandwidth                          %         1.11
+    L1/TEX Hit Rate                        %            0
+    L2 Compression Success Rate            %            0
+    L2 Compression Ratio                                0
+    L2 Hit Rate                            %        82.76
+    Mem Pipes Busy                         %         0.68
+    --------------------------- ------------ ------------
+
+    Section: Scheduler Statistics
+    ---------------------------- ----------- ------------
+    Metric Name                  Metric Unit Metric Value
+    ---------------------------- ----------- ------------
+    One or More Eligible                   %         0.08
+    Issued Warp Per Scheduler                        0.00
+    No Eligible                            %        99.92
+    Active Warps Per Scheduler          warp         4.90
+    Eligible Warps Per Scheduler        warp         0.00
+    ---------------------------- ----------- ------------
+
+    WRN   Every scheduler is capable of issuing one instruction per cycle, but for this kernel each scheduler only      
+          issues an instruction every 1289.3 cycles. This might leave hardware resources underutilized and may lead to  
+          less optimal performance. Out of the maximum of 12 warps per scheduler, this kernel allocates an average of   
+          4.90 active warps per scheduler, but only an average of 0.00 warps were eligible per cycle. Eligible warps    
+          are the subset of active warps that are ready to issue their next instruction. Every cycle with no eligible   
+          warp results in no instruction being issued and the issue slot remains unused. To increase the number of      
+          eligible warps, reduce the time the active warps are stalled by inspecting the top stall reasons on the Warp  
+          State Statistics and Source Counters sections.                                                                
+    ----- --------------------------------------------------------------------------------------------------------------
+    WRN   The 8.00 theoretical warps per scheduler this kernel can issue according to its occupancy are below the       
+          hardware maximum of 12. Use the Occupancy section to identify what limits this kernel's theoretical           
+          occupancy.                                                                                                    
+
+    Section: Warp State Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Warp Cycles Per Issued Instruction             cycle     6,321.64
+    Warp Cycles Per Executed Instruction           cycle     6,324.50
+    Avg. Active Threads Per Warp                                   32
+    Avg. Not Predicated Off Threads Per Warp                    29.71
+    ---------------------------------------- ----------- ------------
+
+    WRN   On average, each warp of this kernel spends 4872.7 cycles being stalled after EXIT waiting for all            
+          outstanding memory operations to complete so that warp's resources can be freed. A high number of stalls due  
+          to draining warps typically occurs when a lot of data is written to memory towards the end of a kernel. Make  
+          sure the memory access patterns of these store operations are optimal for the target architecture and         
+          consider parallelized data reduction, if applicable.. This stall type represents about 77.1% of the total     
+          average of 6321.6 cycles between issuing two instructions.                                                    
+    ----- --------------------------------------------------------------------------------------------------------------
+    INF   Check the Warp Stall Sampling (All Cycles) table for the top stall locations in your source based on sampling 
+          data. The Kernel Profiling Guide                                                                              
+          (https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#metrics-reference) provides more details    
+          on each stall reason.                                                                                         
+
+    Section: Instruction Statistics
+    ---------------------------------------- ----------- ------------
+    Metric Name                              Metric Unit Metric Value
+    ---------------------------------------- ----------- ------------
+    Avg. Executed Instructions Per Scheduler        inst    82,276.17
+    Executed Instructions                           inst   15,138,816
+    Avg. Issued Instructions Per Scheduler          inst    82,313.42
+    Issued Instructions                             inst   15,145,670
+    ---------------------------------------- ----------- ------------
+
+    Section: Launch Statistics
+    -------------------------------- --------------- ---------------
+    Metric Name                          Metric Unit    Metric Value
+    -------------------------------- --------------- ---------------
+    Block Size                                                 1,024
+    Function Cache Configuration                     CachePreferNone
+    Grid Size                                                 33,792
+    Registers Per Thread             register/thread              16
+    Shared Memory Configuration Size           Kbyte            8.19
+    Driver Shared Memory Per Block       Kbyte/block            1.02
+    Dynamic Shared Memory Per Block       byte/block               0
+    Static Shared Memory Per Block        byte/block               0
+    Threads                                   thread      34,603,008
+    Waves Per SM                                              734.61
+    -------------------------------- --------------- ---------------
+
+    Section: Occupancy
+    ------------------------------- ----------- ------------
+    Metric Name                     Metric Unit Metric Value
+    ------------------------------- ----------- ------------
+    Block Limit SM                        block           16
+    Block Limit Registers                 block            4
+    Block Limit Shared Mem                block            8
+    Block Limit Warps                     block            1
+    Theoretical Active Warps per SM        warp           32
+    Theoretical Occupancy                     %        66.67
+    Achieved Occupancy                        %        39.04
+    Achieved Active Warps Per SM           warp        18.74
+    ------------------------------- ----------- ------------
+
+    WRN   This kernel's theoretical occupancy (66.7%) is limited by the number of warps within each block. The          
+          difference between calculated theoretical (66.7%) and measured achieved occupancy (39.0%) can be the result   
+          of warp scheduling overheads or workload imbalances during the kernel execution. Load imbalances can occur    
+          between warps within a block as well as across blocks of the same kernel. See the CUDA Best Practices Guide   
+          (https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#occupancy) for more details on           
+          optimizing occupancy.                                                                                         
+
+    Section: Source Counters
+    ------------------------- ----------- ------------
+    Metric Name               Metric Unit Metric Value
+    ------------------------- ----------- ------------
+    Branch Instructions Ratio           %         0.14
+    Branch Instructions              inst    2,162,688
+    Branch Efficiency                   %            0
+    Avg. Divergent Branches                          0
+    ------------------------- ----------- ------------
+
