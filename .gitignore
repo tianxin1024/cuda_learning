@@ -4,3 +4,6 @@
 *.ptx
 *.cubin
 *.fatbin
+code/reduction/reduce_v1.log
+code/reduction/test
+code/reduction/parallel_reduction
